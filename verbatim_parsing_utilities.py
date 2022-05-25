@@ -20,20 +20,47 @@ def parse_file(filename):
     card_text = ''
     card_emphs = []
     for p in p_sections:
-        if is_tag(p):
+        in_tag = is_tag(p)
+        in_header = is_header(p)
+        in_cite = is_cite(p)
+        if in_tag:
             tag_flag = True
             in_card = False
-            card_list.append((card_text,0))
+            card_list.append((card_text,card_emphs))
+            if len(card_text.split()) != len(card_emphs):
+                print('Length error thing reee')
+            # resets the things 
             card_text = ''
-        if in_card and not is_cite(p):
+            card_emphs = []
+        if in_header:
+            in_card = False
+        if in_card and not in_cite:
+            # text dump
             r_sections = p.findall('w:r',ns)
             for r in r_sections:
-                for snip in get_section_text(r):
+                # text dump
+                sec_text = get_section_text(r)
+                for snip in sec_text:
                     card_text = card_text + snip
+                # classification symbol dump
+                class_val = 0
+                is_high = is_highlight(r)
+                is_under = is_underline(r)
+                is_bold = is_emph(r)
+                if is_under:
+                    class_val+=1
+                if is_high:
+                    class_val+=2
+                if is_bold:
+                    class_val+=2
+                word_list = sec_text.split()
+                for word in word_list:
+                    card_emphs.append(class_val)
+
         if tag_flag:
             in_card = True
             tag_flag = False
-    card_list.append((card_text,0))
+    card_list.append((card_text,card_emphs))
     return card_list
 def is_tag(p):
     """Returns True if the given paragraph section has been styled as a Tag"""
@@ -66,13 +93,28 @@ def is_cite(p):
     if heading_style_elem is not None:
         return_val = True
     return return_val
+def is_header(p):
+    return is_block(p) or is_hat(p) or is_pocket(p)
 def is_underline(r):
     return_val = False
-    heading_style_elem = r.find("w:val=\"StyleUnderline\"", ns)
+    #heading_style_elem = r.find("w:val=\"StyleUnderline\"", ns)
+    heading_style_elem = r.find(".//w:rStyle[@w:val='StyleUnderline']", ns)
     if heading_style_elem is not None:
         return_val = True
     return return_val
- 
+def is_highlight(r):
+    return_val = False
+    heading_style_elem = r.find(".//w:highlight", ns) #TODO fixed?
+    if heading_style_elem is not None:
+        return_val = True
+    return return_val
+def is_emph(r):
+    return_val = False
+    #heading_style_elem = r.find("w:val=\"Emphasis\"", ns)
+    heading_style_elem = r.find(".//w:rStyle[@w:val='Emphasis']", ns)
+    if heading_style_elem is not None:
+        return_val = True
+    return return_val
 def get_section_text(p):
     """Returns the joined text of the text elements under the given paragraph tag"""
     return_val = ''
@@ -80,17 +122,12 @@ def get_section_text(p):
     if text_elems is not None:
         return_val = ''.join([t.text for t in text_elems])
     return return_val
-#stuff = parse_file('verb_ex.docx')
-#stuff = np.array(parse_file('Q_Impact_Turn_Master_File.docx'))
-#np.save('impact_text',stuff)
-#print('done')
-max_length = 0
-index = 0
-stuff = np.load('impact_text.npy')
-for i,card in enumerate(stuff):
-    length = len(card[0])
-    if length > max_length:
-        index = i
-        max_length = length
-print(max_length)
-print(stuff[index])
+stuff = parse_file('verb_ex_two.docx')
+
+np.save('verb_ex_two',stuff)
+
+stuff = np.load('verb_ex_two.npy',allow_pickle=True)
+#print(len(stuff))
+#print(stuff)
+
+# TODO add thing later to delete first phantom entry 
