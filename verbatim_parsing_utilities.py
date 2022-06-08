@@ -4,9 +4,11 @@
 import zipfile
 import xml.etree.ElementTree as ET
 import numpy as np
+from bloom_filter2 import BloomFilter
+import glob
 ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-def parse_file(filename):
-    doc = zipfile.ZipFile(filename).read('word/document.xml')
+def parse_file(read_file,print_stats=True):
+    doc = zipfile.ZipFile(read_file).read('word/document.xml')
     root = ET.fromstring(doc)
     #print(ET.tostring(root))
     card_list = [] # each entry contains tuple with list of text and list of classification values as follows:
@@ -24,6 +26,7 @@ def parse_file(filename):
     print_bad_card = False
     card_text = ''
     card_emphs = []
+    
     for p in p_sections:
         in_tag = is_tag(p)
         in_header = is_header(p)
@@ -31,11 +34,12 @@ def parse_file(filename):
         if in_tag: # saves current card to list, resets list
             tag_flag = True
             in_card = False
+            # adds the card or doesn't 
             card_list.append((card_text,card_emphs))
             if len(card_text.split()) != len(card_emphs):
                 length_error_count+=1
                 if print_bad_card:
-                    print(card_list[-1])
+                    #print(card_list[-1])
                     print_bad_card = False
                 #print (abs(len(card_text.split()) - len(card_emphs)))
             # resets the things 
@@ -71,9 +75,10 @@ def parse_file(filename):
                     class_val+=2
                 word_list = sec_text.split()
                 if (not prev_last_space) and (not next_first_space):
-                    if class_val < card_emphs[-1]:
-                        class_val = card_emphs[-1]
-                    card_emphs.pop()
+                    if len(card_emphs) != 0:
+                        if class_val < card_emphs[-1]:
+                            class_val = card_emphs[-1]
+                        card_emphs.pop()
                 for word in word_list:
                     card_emphs.append(class_val)
                 # more stuff for across run word managment 
@@ -89,11 +94,12 @@ def parse_file(filename):
     if len(card_text.split()) != len(card_emphs):
                 length_error_count+=1
                 if print_bad_card:
-                    print(card_list[-1])
+                    #print(card_list[-1])
                     print_bad_card = False
     card_list.pop(0) # gets rid of weird phantom card that gets added 
-    print('Number of length errors: ' + str(length_error_count))
-    print('Total card count: ' + str(len(card_list)))
+    if(print_stats):
+        print('Number of length errors: ' + str(length_error_count))
+        print('Total card count: ' + str(len(card_list)))
     return card_list
 def is_tag(p):
     """Returns True if the given paragraph section has been styled as a Tag"""
@@ -161,17 +167,62 @@ def get_section_text(p):
     if text_elems is not None:
         return_val = ''.join([t.text for t in text_elems])
     return return_val
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+    # thanks to Greenstick on StackOverflow for the method 
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
+def parse_card_dump(print_file_names = False):
+    # set up stuff 
+    length_error_count = 0
+    valid_card_count = 0
+    repeated_card_count = 0
+    card_list = []
+    bloom = BloomFilter(max_elements=10000, error_rate=0.001)
+    #bloom.add("test-key")
+    #assert "test-key" in bloom
+    word_doc_list = glob.glob('*.docx')
+    total_docs = len(word_doc_list)
+    current_doc = 0
+    for card_file in word_doc_list:
+        current_doc+=1
+        printProgressBar(current_doc,total_docs)
+        if(print_file_names):
+            print(card_file)
+        try:
+            temp_card_list = parse_file(card_file,print_stats=False)
+        finally:
+            for card_tuple in temp_card_list:
+                if len(card_tuple[0].split()) != len(card_tuple[1]):
+                    length_error_count+=1
+                else:
+                    if not card_tuple[0] in bloom:
+                        card_list.append(card_tuple)
+                        valid_card_count+=1
+                        bloom.add(card_tuple[0])
+                    else:
+                        repeated_card_count+=1
+    np.save('training_data',card_list)
+    print('Total Valid Cards: ' + str(valid_card_count))
+    print('Total Invalid Cards: ' + str(length_error_count))
+    print('Total Repeated Cards: ' + str(repeated_card_count))
+    #stuff = np.load(test_doc + '.npy',allow_pickle=True)
 
 
-test_doc = 'verb_ex_two'
-test_doc = 'Q_Impact_Turn_Master_File'
-#test_doc = 'test'
-
-stuff = parse_file(test_doc + '.docx')
-
-np.save(test_doc,stuff)
-
-stuff = np.load(test_doc + '.npy',allow_pickle=True)
-#print(len(stuff))
-#print(stuff)
-
+parse_card_dump()
